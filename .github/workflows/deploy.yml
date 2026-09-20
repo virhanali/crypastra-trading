@@ -21,6 +21,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # dist/ di-gitignore, jadi build workspace dulu sebelum test: test
+      # mengimpor @crypastra/core/adapters lewat `exports` -> ./dist.
+      - run: bun run --filter @crypastra/core build && bun run --filter @crypastra/adapters build
       # Batas repo (AGENTS.md): bun test + bun run check wajib hijau.
       # `check` mencakup build core + typecheck adapters/server/web.
       - run: bun test
