@@ -115,10 +115,16 @@ const statsTimer = setInterval(() => {
   const stats = new MarketObservationRepository(connection).stats(sessionId);
   const metrics = recorder.metrics();
   const elapsed = Math.round((systemClock.nowMs() - startedAt) / 1000);
+  // Diagnostik koneksi (pola: stall diam-diam tanpa error di log bila
+  // socket setengah-terbuka; angka-angka ini membedakannya dari "tidak ada
+  // pesan karena pasar sepi").
+  const gate = provider.metrics();
   console.log(
     `[record] ${elapsed}s obs=${stats.total} mark=${stats.byKind.mark ?? 0} quote=${stats.byKind.quote ?? 0} ` +
       `funding=${stats.byKind.funding ?? 0} candle=${stats.byKind.candle ?? 0} ` +
       `bytes=${stats.bytes} skipped=${metrics.observationsSkippedUnchanged}` +
+      ` | ws=${provider.state()} conn=${gate.wsConnections} msg=${gate.wsMessages} ` +
+      `reconn=${gate.wsReconnects} sched=${gate.reconnectsScheduled} attempt=${gate.reconnectAttempt} parseErr=${gate.wsParseErrors}` +
       (collector === null ? "" : ` | collector=${JSON.stringify(collector.status())}`),
   );
 }, 15_000);
