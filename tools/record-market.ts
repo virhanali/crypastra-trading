@@ -49,7 +49,11 @@ const recorder = new MarketRecorder({
 const active = new RecordingSessionRepository(connection).active();
 let sessionId: string;
 if (active !== null) {
-  const activeContracts = JSON.parse(active.contractsJson) as string[];
+  // active adalah RecordingSessionRecord: `contracts` SUDAH array hasil
+  // parse (lihat mapSessionRow). Memakai `active.contractsJson` di sini
+  // adalah bug: field itu tidak ada di tipe ini, JSON.parse(undefined)
+  // melempar setiap kali sesi recording aktif ditemukan saat start.
+  const activeContracts = [...active.contracts];
   const sameUniverse =
     activeContracts.length === contracts.length && activeContracts.every((c) => contracts.includes(c));
   if (sameUniverse) {

@@ -38,6 +38,16 @@ log "migrasi OK"
 log "menarik ${CRYPASTRA_IMAGE:-image dari compose}"
 $COMPOSE pull "$SERVICE"
 
+# Migrasi satu-kali dari era tarball-deploy: container lama bernama
+# `app-crypastra-recorder-1` (project compose lama `app`) TIDAK dikelola
+# project `crypastra` ini — tanpa baris ini dua recorder jalan bareng
+# menulis ke volume DB yang sama. Aman diulang: tidak ada -> tidak apa-apa.
+if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx 'app-crypastra-recorder-1'; then
+    log "menghentikan container legacy app-crypastra-recorder-1 (era pre-CI)"
+    docker stop app-crypastra-recorder-1 >/dev/null 2>&1 || true
+    docker rm app-crypastra-recorder-1 >/dev/null 2>&1 || true
+fi
+
 log "menjalankan versi baru"
 $COMPOSE up -d --no-build "$SERVICE"
 
