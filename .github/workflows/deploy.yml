@@ -1,0 +1,86 @@
+name: test & deploy
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # Dua push berurutan tidak boleh deploy bersamaan. Yang lama dibatalkan.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      # Batas repo (AGENTS.md): bun test + bun run check wajib hijau.
+      # `check` mencakup build core + typecheck adapters/server/web.
+      - run: bun test
+      - run: bun run check
+
+  build:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Dibangun DI SINI, bukan di VPS (pola cadence/selisik). VPS cuma
+      # menarik lapisan yang berubah, biasanya beberapa MB.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push'
+    # VPS ini tidak punya SSH — runner dipasang LANGSUNG di VPS (systemd
+    # service), jadi deploy jalan lokal di mesin tujuan, bukan lewat jaringan.
+    # /opt/crypastra/app BUKAN git clone dan config/crypastra.env menyimpan
+    # kredensial: hanya compose.yaml + Dockerfile + .dockerignore + scripts/
+    # + deploy/ yang disalin ulang tiap deploy; env + data tidak disentuh.
+    runs-on: [self-hosted]
+    permissions:
+      contents: read
+      packages: read
+    env:
+      APP_DIR: /opt/crypastra/app
+    steps:
+      - uses: actions/checkout@v4
+      - name: salin file deploy ke direktori aplikasi
+        run: |
+          set -euo pipefail
+          cp compose.yaml "$APP_DIR/compose.yaml"
+          cp Dockerfile "$APP_DIR/Dockerfile"
+          cp .dockerignore "$APP_DIR/.dockerignore"
+          cp -r scripts/. "$APP_DIR/scripts/"
+          cp -r deploy/. "$APP_DIR/deploy/"
+          chmod +x "$APP_DIR"/deploy/*.sh "$APP_DIR"/scripts/*.sh
+      - name: deploy
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          cd "$APP_DIR"
+          CRYPASTRA_IMAGE=${{ env.IMAGE }}:${{ github.sha }} ./deploy/update.sh

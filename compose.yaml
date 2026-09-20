@@ -2,6 +2,11 @@
 # Tidak ada port publik — recorder hanya butuh outbound ke Gate.io, tidak
 # ada inbound (bagian X). CRYPASTRA_JEV=1 mengaktifkan RECORD + COLLECT,
 # TIDAK dinyalakan otomatis oleh compose ini.
+#
+# Nama project dipin (bukan dari nama direktori) supaya container/network
+# stabil disebut crypastra-* meski direktori app berganti nama.
+name: crypastra
+
 services:
   crypastra-recorder:
     image: ${CRYPASTRA_IMAGE:-crypastra-recorder:local}
@@ -89,4 +94,9 @@ networks:
 
 volumes:
   crypastra-data:
+    # Volume dibuat di luar compose (migrasi docker run -v pertama kali);
+    # external supaya compose tidak memperingatkan "already exists but was
+    # not created by Docker Compose" dan tidak mencoba membuatnya ulang.
+    # Data riset hidup di sini — JANGAN hapus volume ini.
+    external: true
     name: crypastra-data
