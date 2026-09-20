@@ -85,6 +85,42 @@ describe("1 & 5. siklus hidup sesi perekaman", () => {
     const { recorder } = setup();
     expect(() => recorder.startSession({ source: "live", contracts: [], startedAtMs: 1 })).toThrow();
   });
+
+  test("resume sesi aktif: menulis + stop memfinalisasi (regresi restart diam-diam mati)", () => {
+    const { db, sessions, observations } = setup();
+    // Proses pertama membuat sesi lalu "mati" tanpa stop (simulasi crash).
+    const first = new MarketRecorder({
+      sessions,
+      observations,
+    });
+    const id = first.startSession({ source: "live", contracts: ["BTC_USDT"], startedAtMs: 1000 });
+
+    // Proses kedua (instance baru, koneksi DB sama): resume lalu rekam.
+    const second = new MarketRecorder({
+      sessions: new RecordingSessionRepository(db.connection),
+      observations: new MarketObservationRepository(db.connection),
+    });
+    expect(second.isRecording()).toBe(false);
+    second.resumeSession(id);
+    expect(second.isRecording()).toBe(true);
+    expect(second.activeSessionId()).toBe(id);
+    second.onEvent(tickerEvent({ mark: "80000", tsMs: 2000 }), 2000);
+    expect(second.metrics().observationsWritten).toBeGreaterThan(0);
+    expect(observations.count(id)).toBeGreaterThan(0);
+
+    // Shutdown setelah resume HARUS memfinalisasi sesi (dulu tidak, karena
+    // #activeSessionId null sehingga stopSession kembali diam-diam).
+    second.stopSession(9000);
+    const stopped = sessions.require(id);
+    expect(stopped.status).toBe("completed");
+    expect(stopped.endedAtMs).toBe(9000);
+  });
+
+  test("resume sesi yang tidak ada melempar", () => {
+    const { recorder } = setup();
+    expect(() => recorder.resumeSession("sesi-hantu")).toThrow();
+    expect(recorder.isRecording()).toBe(false);
+  });
 });
 
 describe("7. kebijakan perekaman", () => {

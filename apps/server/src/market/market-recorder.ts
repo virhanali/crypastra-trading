@@ -68,6 +68,20 @@ export class MarketRecorder {
     return session.id;
   }
 
+  /**
+   * Lanjutkan sesi yang sudah ada di DB (mis. sesi `recording` yang cocok
+   * ditemukan saat start ulang proses). Gagal-cepat bila id tidak ada.
+   *
+   * Tanpa ini, jalur resume diam-diam TIDAK menulis apa pun (dan TIDAK
+   * memfinalisasi sesi saat shutdown) karena #activeSessionId tetap null —
+   * persis bug yang mematikan perekaman setiap restart dengan sesi aktif.
+   */
+  resumeSession(id: string): void {
+    this.#sessions.require(id);
+    this.#activeSessionId = id;
+    this.#lastByKey.clear();
+  }
+
   stopSession(endedAtMs: number, status: "completed" | "aborted" = "completed"): void {
     if (this.#activeSessionId === null) {
       return;

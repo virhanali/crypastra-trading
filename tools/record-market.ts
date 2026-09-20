@@ -58,6 +58,10 @@ if (active !== null) {
     activeContracts.length === contracts.length && activeContracts.every((c) => contracts.includes(c));
   if (sameUniverse) {
     sessionId = active.id;
+    // WAJIB: daftarkan sesi ke recorder. Tanpa ini #activeSessionId tetap
+    // null sehingga onEvent diam-diam membuang semua event (dan shutdown
+    // tidak memfinalisasi sesi) — bug yang mematikan perekaman tiap restart.
+    recorder.resumeSession(active.id);
     console.log(`[record] melanjutkan sesi aktif ${sessionId}`);
   } else {
     new RecordingSessionRepository(connection).stop(active.id, systemClock.nowMs(), "aborted");
@@ -122,7 +126,7 @@ const statsTimer = setInterval(() => {
   console.log(
     `[record] ${elapsed}s obs=${stats.total} mark=${stats.byKind.mark ?? 0} quote=${stats.byKind.quote ?? 0} ` +
       `funding=${stats.byKind.funding ?? 0} candle=${stats.byKind.candle ?? 0} ` +
-      `bytes=${stats.bytes} skipped=${metrics.observationsSkippedUnchanged}` +
+      `bytes=${stats.bytes} skipped=${metrics.observationsSkippedUnchanged} dup=${metrics.observationsDeduplicated}` +
       ` | ws=${provider.state()} conn=${gate.wsConnections} msg=${gate.wsMessages} ` +
       `reconn=${gate.wsReconnects} sched=${gate.reconnectsScheduled} attempt=${gate.reconnectAttempt} parseErr=${gate.wsParseErrors}` +
       (collector === null ? "" : ` | collector=${JSON.stringify(collector.status())}`),
