@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789902798208,
+      "tag": "0000_chunky_human_torch",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789902801702,
+      "tag": "0001_ledger_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789903420936,
+      "tag": "0002_enable_decimal",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789904319974,
+      "tag": "0003_trade_commands",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789908626252,
+      "tag": "0004_domain_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789908631724,
+      "tag": "0005_domain_events_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789923070697,
+      "tag": "0006_market_observations",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789923078407,
+      "tag": "0007_market_observations_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789930000000,
+      "tag": "0008_feature_scanner",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789935000000,
+      "tag": "0009_decision_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789940000000,
+      "tag": "0010_autonomous_execution",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789945000000,
+      "tag": "0011_jev_treatment",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789950000000,
+      "tag": "0012_outcome_labels",
+      "breakpoints": true
+    }
+  ]
+}

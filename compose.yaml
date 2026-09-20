@@ -1,0 +1,92 @@
+# Deployment VPS: satu container, RECORD ONLY secara default (bagian N).
+# Tidak ada port publik — recorder hanya butuh outbound ke Gate.io, tidak
+# ada inbound (bagian X). CRYPASTRA_JEV=1 mengaktifkan RECORD + COLLECT,
+# TIDAK dinyalakan otomatis oleh compose ini.
+services:
+  crypastra-recorder:
+    image: ${CRYPASTRA_IMAGE:-crypastra-recorder:local}
+    # Hanya dipakai saat build lokal (`docker compose build`). Di VPS,
+    # deploy-vps.sh memakai `--no-build` dan menarik image dari registry
+    # atau memakai image yang sudah dibangun di VPS lewat git checkout.
+    build: .
+    restart: unless-stopped
+
+    # --seconds 0 = tanpa batas waktu (default tools/record-market.ts adalah
+    # 3600 = auto-stop 1 jam, tidak cocok untuk 24/7). --contracts dari .env
+    # lewat shell substitution compose; default BTC_USDT,ETH_USDT bila kosong.
+    command:
+      - bun
+      - run
+      - tools/record-market.ts
+      - --contracts
+      - ${CRYPASTRA_CONTRACTS:-BTC_USDT,ETH_USDT}
+      - --seconds
+      - "0"
+
+    # Grace period untuk finalisasi sesi (bagian J): tools/record-market.ts
+    # menutup sesi (status completed) + menulis SQLite saat SIGTERM. 30s
+    # jauh di atas waktu tulis SQLite WAL normal.
+    stop_grace_period: 30s
+
+    # NAMED VOLUME, bukan bind mount ke ./data. Container berjalan sebagai
+    # uid 10003 (non-root); bind mount ke direktori host yang dimiliki root
+    # menghasilkan "unable to open database file" tanpa keterangan jelas —
+    # pelajaran yang sama dipetik Selisik (lihat /opt/selisik/compose.yaml
+    # di VPS ini). Named volume mewarisi kepemilikan dari image.
+    volumes:
+      - crypastra-data:/data
+
+    # Layout VPS (bagian L): compose.yaml ini hidup di /opt/crypastra/app/,
+    # env produksi di /opt/crypastra/config/crypastra.env (sibling, TIDAK
+    # PERNAH ditimpa deploy — deploy-vps.sh hanya mengganti isi app/).
+    env_file:
+      - ../config/crypastra.env
+
+    environment:
+      NODE_ENV: production
+      CRYPASTRA_DB_PATH: /data/research.db
+      CRYPASTRA_MIGRATIONS_DIR: /app/apps/server/drizzle
+      # RECORD ONLY secara default. Set CRYPASTRA_JEV=1 di .env untuk
+      # RECORD + COLLECT — TIDAK dilakukan otomatis oleh compose ini
+      # (bagian Q: smoke:jev wajib lulus dulu).
+      CRYPASTRA_JEV: ${CRYPASTRA_JEV:-0}
+
+    # VPS ini 2 vCPU / ~3.7GiB RAM, sudah menjalankan cadence (512m) +
+    # selisik (1g). Recorder ringan (append-only SQLite, tanpa web/UI);
+    # 512m/0.5 cpu memberi headroom tanpa mengganggu service lain.
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: "0.5"
+
+    # DNS langsung ke resolver publik: stub lokal VPS lambat (pelajaran
+    # cadence/selisik — resolve SMTP 8 detik, timeout IPv6).
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    dns_opt:
+      - single-request
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: ["CMD", "bun", "run", "scripts/healthcheck.ts"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+# MTU NIC VPS ini 1442, bridge Docker default 1500: paket besar (WS Gate,
+# TLS) dari container bisa nyangkut di tengah jalan. Turunkan ke 1400
+# (pola yang sama dipakai cadence & selisik di VPS ini).
+networks:
+  default:
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"
+
+volumes:
+  crypastra-data:
+    name: crypastra-data

@@ -1,0 +1,12 @@
+-- Phase 2: `enable_decimal` untuk contracts.
+--
+-- 14 dari 997 kontrak USDT Gate.io (probe 20 Sep 2026) memakai
+-- `enable_decimal: true` dengan `order_size_min: 0`, termasuk ETH_USDT,
+-- SOL_USDT, XRP_USDT, TRX_USDT. Tanpa kolom ini, spesifikasi kontrak yang
+-- dipersist kehilangan informasi dan validasi ukuran menjadi salah.
+--
+-- DEFAULT 0 wajib: SQLite menolak `ADD COLUMN ... NOT NULL` tanpa default bila
+-- tabel sudah berisi baris, sehingga tanpa default migrasi ini akan gagal pada
+-- database Phase 1 yang sudah terisi. 0 = false = benar untuk 983 kontrak, dan
+-- 14 kontrak desimal akan dikoreksi saat upsert kontrak berikutnya.
+ALTER TABLE `contracts` ADD `enable_decimal` integer NOT NULL DEFAULT 0;

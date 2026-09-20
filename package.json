@@ -1,0 +1,49 @@
+{
+  "name": "crypastra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "bun run --filter @crypastra/core build && bun run --filter @crypastra/adapters build && bun run --filter @crypastra/server build",
+    "check": "bun run --filter @crypastra/core build && bun run --filter @crypastra/adapters check && bun run --filter @crypastra/server check && bun run --filter @crypastra/web check",
+    "test": "bun test",
+    "db:generate": "bun run --filter @crypastra/server db:generate",
+    "db:migrate": "bun run --filter @crypastra/server db:migrate",
+    "probe": "bun run --filter @crypastra/core build && bun run tools/probe-gateio.ts",
+    "smoke:live": "bun run --filter @crypastra/core build && bun run tools/smoke-live-market.ts",
+    "smoke:paper": "bun run --filter @crypastra/core build && bun run tools/smoke-paper-trade.ts",
+    "build:web": "bun run --filter @crypastra/web build",
+    "dev:web": "bun run --filter @crypastra/web dev",
+    "dev:server": "bun run --filter @crypastra/core build && bun run --filter @crypastra/adapters build && bun run apps/server/src/main.ts",
+    "dev:server:live": "CRYPASTRA_MODE=live bun run dev:server",
+    "dev:server:sim": "CRYPASTRA_MODE=simulation bun run dev:server",
+    "smoke:live-api": "bun run tools/smoke-live-api.ts",
+    "smoke:record-replay": "bun run --filter @crypastra/core build && bun run tools/smoke-record-replay.ts",
+    "analyze:recording": "bun run tools/analyze-recording.ts",
+    "analyze:decisions": "bun run tools/analyze-decisions.ts",
+    "evaluate:baseline": "bun run tools/evaluate-baseline.ts",
+    "evaluate:ab": "bun run tools/evaluate-ab.ts",
+    "smoke:jev": "bun run tools/smoke-jev.ts",
+    "record:market": "bun run --filter @crypastra/core build && bun run tools/record-market.ts",
+    "dataset:status": "bun run tools/dataset-status.ts",
+    "dataset:export": "bun run tools/dataset-export.ts",
+    "jev:backfill": "bun run tools/jev-backfill.ts",
+    "dataset:label": "bun run tools/dataset-label.ts"
+  },
+  "devDependencies": {
+    "@crypastra/adapters": "workspace:*",
+    "@crypastra/core": "workspace:*",
+    "@types/bun": "^1.4.0",
+    "@types/node": "^22.15.21",
+    "typescript": "5.9.3",
+    "@crypastra/web": "workspace:*"
+  }
+}
