@@ -92,6 +92,13 @@
       "when": 1789950000000,
       "tag": "0012_outcome_labels",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790000000000,
+      "tag": "0013_session_observed_idx",
+      "breakpoints": true
     }
   ]
 }

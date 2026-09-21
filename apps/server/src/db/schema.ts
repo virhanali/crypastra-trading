@@ -741,6 +741,10 @@ export const marketObservations = sqliteTable(
     index("market_observations_session_seq_idx").on(table.sessionId, table.seq),
     index("market_observations_session_kind_idx").on(table.sessionId, table.kind, table.seq),
     index("market_observations_session_contract_idx").on(table.sessionId, table.contract, table.seq),
+    // Freshness check O(log n): "observasi terakhir sesi X" tanpa full scan.
+    // Hot loop recorder + healthcheck memakainya tiap detik/menit; tanpa
+    // indeks ini max(observed_at_ms) memindai seluruh sesi (jutaan baris).
+    index("market_observations_session_observed_idx").on(table.sessionId, table.observedAtMs),
   ],
 );
 

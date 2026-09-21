@@ -116,17 +116,28 @@ const off = provider.onEvent((event) => recorder.onEvent(event, systemClock.nowM
 
 const startedAt = systemClock.nowMs();
 const statsTimer = setInterval(() => {
-  const stats = new MarketObservationRepository(connection).stats(sessionId);
   const metrics = recorder.metrics();
   const elapsed = Math.round((systemClock.nowMs() - startedAt) / 1000);
+  // SENGAJA tidak memakai stats() full-scan di sini: pada DB jutaan baris,
+  // GROUP BY seluruh sesi memblokir event loop SQLite sinkron selama
+  // bermenit-menit (perekaman ikut macet). Total sesi baca dari
+  // dataset:status (offline); baris ini memakai counter in-process +
+  // freshness O(log n) lewat indeks 0013.
+  const fresh = connection.sqlite
+    .query(
+      "SELECT observed_at_ms as lastMs FROM market_observations WHERE session_id = ? ORDER BY observed_at_ms DESC LIMIT 1",
+    )
+    .get(sessionId) as { lastMs: number } | null;
+  const freshAgeS = fresh === null ? -1 : Math.max(0, Math.round((systemClock.nowMs() - fresh.lastMs) / 1000));
   // Diagnostik koneksi (pola: stall diam-diam tanpa error di log bila
   // socket setengah-terbuka; angka-angka ini membedakannya dari "tidak ada
   // pesan karena pasar sepi").
   const gate = provider.metrics();
+  const kinds = metrics.byKind;
   console.log(
-    `[record] ${elapsed}s obs=${stats.total} mark=${stats.byKind.mark ?? 0} quote=${stats.byKind.quote ?? 0} ` +
-      `funding=${stats.byKind.funding ?? 0} candle=${stats.byKind.candle ?? 0} ` +
-      `bytes=${stats.bytes} skipped=${metrics.observationsSkippedUnchanged} dup=${metrics.observationsDeduplicated}` +
+    `[record] ${elapsed}s +${metrics.observationsWritten} mark=${kinds["mark"] ?? 0} quote=${kinds["quote"] ?? 0} ` +
+      `funding=${kinds["funding"] ?? 0} candle=${kinds["candle"] ?? 0} ` +
+      `skipped=${metrics.observationsSkippedUnchanged} dup=${metrics.observationsDeduplicated} fresh=${freshAgeS}s` +
       ` | ws=${provider.state()} conn=${gate.wsConnections} msg=${gate.wsMessages} ` +
       `reconn=${gate.wsReconnects} sched=${gate.reconnectsScheduled} attempt=${gate.reconnectAttempt} parseErr=${gate.wsParseErrors}` +
       (collector === null ? "" : ` | collector=${JSON.stringify(collector.status())}`),

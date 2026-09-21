@@ -46,8 +46,12 @@ if (session === null) {
   fail("tidak ada sesi recording aktif");
 }
 
+// ORDER BY ... LIMIT 1 (bukan max()): memakai indeks
+// market_observations_session_observed_idx (migrasi 0013), O(log n).
+// max() full-scan memblokir puluhan detik pada DB jutaan baris sehingga
+// healthcheck timeout dan container salah dilaporkan unhealthy.
 const lastObservation = db
-  .query("SELECT max(observed_at_ms) as lastMs FROM market_observations WHERE session_id = ?")
+  .query("SELECT observed_at_ms as lastMs FROM market_observations WHERE session_id = ? ORDER BY observed_at_ms DESC LIMIT 1")
   .get(session.id) as { lastMs: number | null } | undefined;
 
 if (lastObservation?.lastMs == null) {
