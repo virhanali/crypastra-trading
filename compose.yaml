@@ -51,6 +51,8 @@ services:
       NODE_ENV: production
       CRYPASTRA_DB_PATH: /data/research.db
       CRYPASTRA_MIGRATIONS_DIR: /app/apps/server/drizzle
+      # Kebijakan perekaman Phase 13.1 (default full bila kosong).
+      CRYPASTRA_RECORDING_POLICY: ${CRYPASTRA_RECORDING_POLICY:-full}
       # RECORD ONLY secara default. Set CRYPASTRA_JEV=1 di .env untuk
       # RECORD + COLLECT — TIDAK dilakukan otomatis oleh compose ini
       # (bagian Q: smoke:jev wajib lulus dulu).

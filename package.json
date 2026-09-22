@@ -34,6 +34,7 @@
     "smoke:jev": "bun run tools/smoke-jev.ts",
     "record:market": "bun run --filter @crypastra/core build && bun run tools/record-market.ts",
     "dataset:status": "bun run tools/dataset-status.ts",
+    "retention": "bun run tools/retention.ts",
     "dataset:export": "bun run tools/dataset-export.ts",
     "jev:backfill": "bun run tools/jev-backfill.ts",
     "dataset:label": "bun run tools/dataset-label.ts"

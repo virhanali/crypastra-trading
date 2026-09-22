@@ -11,6 +11,7 @@ export * from "./exchange/valuation.js";
 export * from "./exchange/depth-book.js";
 export * from "./exchange/market-state.js";
 export * from "./exchange/observations.js";
+export * from "./exchange/recording-policy.js";
 export * from "./exchange/canonical.js";
 export * from "./exchange/funding-policy.js";
 export * from "./exchange/settlement.js";

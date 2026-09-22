@@ -11,7 +11,7 @@
  *   RECORD ONLY        — rekam saja (default)
  *   RECORD + COLLECT   — tambah kolektor Jev asinkron (CRYPASTRA_JEV=1)
  */
-import { systemClock } from "@crypastra/core";
+import { recordingPolicyFromEnv, systemClock } from "@crypastra/core";
 import { GateioMarketDataProvider, realJevConfigFromEnv, RealJevAdapter } from "@crypastra/adapters";
 import { openDatabase } from "../apps/server/src/db/database.js";
 import {
@@ -39,13 +39,23 @@ const dbPath = resolve(flag("--db", process.env.CRYPASTRA_DB_PATH ?? "data/resea
 mkdirSync(dirname(dbPath), { recursive: true });
 
 const connection = openDatabase({ path: dbPath });
+// Kebijakan perekaman dari env (default FULL = perilaku lama). Lihat
+// packages/core/src/exchange/recording-policy.ts untuk semantik.
+const recordingPolicy = recordingPolicyFromEnv(process.env);
 const recorder = new MarketRecorder({
   sessions: new RecordingSessionRepository(connection),
   observations: new MarketObservationRepository(connection),
+  policy: recordingPolicy,
 });
+const sessionMetadata = {
+  recordingPolicy: recordingPolicy.name,
+  recordingPolicyVersion: recordingPolicy.version,
+};
 
-// ── Resumability (§3): sesi aktif yang cocok DILANJUTKAN; yang tidak cocok
-// ditutup sebagai `aborted` (tidak pernah mencampur konfigurasi berbeda). ──
+// ── Resumability (§3 + Phase 13.1): sesi aktif DILANJUTKAN hanya bila
+// universe kontrak DAN kebijakan perekaman cocok; yang tidak cocok ditutup
+// sebagai `aborted` (tidak pernah mencampur konfigurasi berbeda dalam satu
+// sesi — termasuk FULL vs RESEARCH_COMPACT). ──
 const active = new RecordingSessionRepository(connection).active();
 let sessionId: string;
 if (active !== null) {
@@ -56,7 +66,11 @@ if (active !== null) {
   const activeContracts = [...active.contracts];
   const sameUniverse =
     activeContracts.length === contracts.length && activeContracts.every((c) => contracts.includes(c));
-  if (sameUniverse) {
+  const activePolicy = active.metadata["recordingPolicy"];
+  // Sesi lama (pra-13.1) tidak punya metadata kebijakan → diperlakukan
+  // sebagai FULL, sesuai perilaku saat sesi itu dibuat.
+  const samePolicy = (activePolicy ?? "full") === recordingPolicy.name;
+  if (sameUniverse && samePolicy) {
     sessionId = active.id;
     // WAJIB: daftarkan sesi ke recorder. Tanpa ini #activeSessionId tetap
     // null sehingga onEvent diam-diam membuang semua event (dan shutdown
@@ -64,12 +78,13 @@ if (active !== null) {
     recorder.resumeSession(active.id);
     console.log(`[record] melanjutkan sesi aktif ${sessionId}`);
   } else {
+    const reason = sameUniverse ? `kebijakan ${String(activePolicy ?? "full")} → ${recordingPolicy.name}` : "universe berbeda";
     new RecordingSessionRepository(connection).stop(active.id, systemClock.nowMs(), "aborted");
-    sessionId = recorder.startSession({ source: "live", contracts, startedAtMs: systemClock.nowMs() });
-    console.log(`[record] sesi lama ${active.id} ditutup (aborted); sesi baru ${sessionId}`);
+    sessionId = recorder.startSession({ source: "live", contracts, startedAtMs: systemClock.nowMs(), metadata: sessionMetadata });
+    console.log(`[record] sesi lama ${active.id} ditutup (aborted, ${reason}); sesi baru ${sessionId}`);
   }
 } else {
-  sessionId = recorder.startSession({ source: "live", contracts, startedAtMs: systemClock.nowMs() });
+  sessionId = recorder.startSession({ source: "live", contracts, startedAtMs: systemClock.nowMs(), metadata: sessionMetadata });
 }
 
 const jevRequested = process.env.CRYPASTRA_JEV === "1";
@@ -93,6 +108,7 @@ console.log(`  session        ${sessionId}`);
 console.log(`  contracts      ${contracts.join(", ")}`);
 console.log(`  mulai          ${new Date(systemClock.nowMs()).toISOString()}`);
 console.log(`  mode           ${collector === null ? "RECORD ONLY" : "RECORD + COLLECT"}`);
+console.log(`  policy         ${recordingPolicy.name} v${recordingPolicy.version}`);
 console.log(`  timeframe      5m (candle tertutup saja)`);
 console.log(`  storage        ${dbPath}\n`);
 

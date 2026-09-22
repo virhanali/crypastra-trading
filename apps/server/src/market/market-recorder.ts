@@ -1,10 +1,13 @@
 import {
   assertObservationsAreStrings,
+  compactSecondBucket,
+  FULL_RECORDING_POLICY,
   observationsFromEvent,
   shouldRecordObservation,
   type MarketEvent,
   type MarketObservation,
   type ObservationKind,
+  type RecordingPolicy,
 } from "@crypastra/core";
 import { MarketObservationRepository, RecordingSessionRepository } from "../repositories/market-observation-repository.js";
 
@@ -23,28 +26,45 @@ export interface MarketRecorderMetrics {
   readonly observationsWritten: number;
   readonly observationsSkippedUnchanged: number;
   readonly observationsDeduplicated: number;
+  /** Dibuang oleh rate cap kebijakan COMPACT (selalu 0 pada FULL). */
+  readonly observationsCoalesced: number;
   readonly byKind: Record<string, number>;
 }
 
 export class MarketRecorder {
   readonly #sessions: RecordingSessionRepository;
   readonly #observations: MarketObservationRepository;
+  readonly #policy: RecordingPolicy;
   #activeSessionId: string | null = null;
   /** Observasi terakhir per (contract, kind) untuk kebijakan volume. */
   readonly #lastByKey = new Map<string, MarketObservation>();
+  /**
+   * Bucket detik terakhir yang dipersist per (contract, kind) — hanya
+   * dipakai kebijakan COMPACT (rate cap per detik waktu-sumber).
+   */
+  readonly #lastBucketByKey = new Map<string, number>();
   readonly #metrics = {
     observationsWritten: 0,
     observationsSkippedUnchanged: 0,
     observationsDeduplicated: 0,
+    observationsCoalesced: 0,
     byKind: {} as Record<string, number>,
   };
 
   constructor(deps: {
     sessions: RecordingSessionRepository;
     observations: MarketObservationRepository;
+    /** Default FULL: perilaku lama, tidak berubah. */
+    policy?: RecordingPolicy;
   }) {
     this.#sessions = deps.sessions;
     this.#observations = deps.observations;
+    this.#policy = deps.policy ?? FULL_RECORDING_POLICY;
+  }
+
+  /** Kebijakan aktif recorder ini (terekam di metadata sesi). */
+  policy(): RecordingPolicy {
+    return this.#policy;
   }
 
   /** Sesi yang sedang direkam, atau null bila perekaman mati. */
@@ -65,6 +85,7 @@ export class MarketRecorder {
     const session = this.#sessions.start(input);
     this.#activeSessionId = session.id;
     this.#lastByKey.clear();
+    this.#lastBucketByKey.clear();
     return session.id;
   }
 
@@ -80,6 +101,7 @@ export class MarketRecorder {
     this.#sessions.require(id);
     this.#activeSessionId = id;
     this.#lastByKey.clear();
+    this.#lastBucketByKey.clear();
   }
 
   stopSession(endedAtMs: number, status: "completed" | "aborted" = "completed"): void {
@@ -109,7 +131,15 @@ export class MarketRecorder {
     }
   }
 
-  /** Tulis satu observasi dengan kebijakan volume + dedupe. */
+  /**
+   * Tulis satu observasi dengan kebijakan volume + dedupe.
+   *
+   * FULL: jalur lama persis (change-rule), tidak berubah.
+   * RESEARCH_COMPACT: change-rule DITAMBAH rate cap deterministik —
+   * quote/mark lolos paling banyak 1 per detik waktu-sumber per kontrak
+   * (yang pertama dalam bucket detik; sisanya dihitung coalesced).
+   * Candle + funding TIDAK pernah kena rate cap.
+   */
   record(sessionId: string, observation: MarketObservation, nowMs: number): boolean {
     assertObservationsAreStrings(observation);
     const key = `${observation.contract}:${observation.kind}`;
@@ -117,6 +147,11 @@ export class MarketRecorder {
 
     if (!shouldRecordObservation(observation, previous)) {
       this.#metrics.observationsSkippedUnchanged += 1;
+      return false;
+    }
+
+    if (!this.#passesRateCap(observation)) {
+      this.#metrics.observationsCoalesced += 1;
       return false;
     }
 
@@ -133,6 +168,34 @@ export class MarketRecorder {
     this.#lastByKey.set(key, observation);
     this.#metrics.observationsWritten += 1;
     this.#metrics.byKind[observation.kind] = (this.#metrics.byKind[observation.kind] ?? 0) + 1;
+    return true;
+  }
+
+  /**
+   * Rate cap per detik waktu-sumber. Hanya membatasi quote/mark; candle dan
+   * funding selalu lolos (return true). Pada FULL, batas = Infinity sehingga
+   * selalu lolos — jalur lama tidak tersentuh.
+   */
+  #passesRateCap(observation: MarketObservation): boolean {
+    let perSecond: number;
+    if (observation.kind === "quote") {
+      perSecond = this.#policy.quotePerSecond;
+    } else if (observation.kind === "mark") {
+      perSecond = this.#policy.markPerSecond;
+    } else {
+      return true;
+    }
+    // Hanya nilai 1 yang ditegakkan; selain itu (Infinity FULL, atau nilai
+    // tak dikenal) lolos — tidak ada kebijakan yang diam-diam mematikan data.
+    if (perSecond !== 1) {
+      return true;
+    }
+    const bucket = compactSecondBucket(observation.sourceTimestampMs);
+    const key = `${observation.contract}:${observation.kind}`;
+    if (this.#lastBucketByKey.get(key) === bucket) {
+      return false;
+    }
+    this.#lastBucketByKey.set(key, bucket);
     return true;
   }
 }

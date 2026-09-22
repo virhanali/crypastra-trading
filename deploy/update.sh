@@ -17,14 +17,29 @@ SERVICE=crypastra-recorder
 TIMEOUT="${CRYPASTRA_SMOKE_TIMEOUT:-180}"
 VOLUME="${CRYPASTRA_VOLUME:-crypastra-data}"
 
+# Substitusi ${VAR} di compose.yaml membaca SHELL env, bukan env_file.
+# Export dulu dari file env produksi agar CRYPASTRA_CONTRACTS /
+# CRYPASTRA_RECORDING_POLICY / CRYPASTRA_JEV ikut ke interpolasi.
+if [[ -f ../config/crypastra.env ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source ../config/crypastra.env
+    set +a
+fi
+
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
 PREVIOUS="$($COMPOSE ps -q "$SERVICE" 2>/dev/null | head -1 | xargs -r docker inspect -f '{{.Config.Image}}' 2>/dev/null || true)"
 [[ -n "$PREVIOUS" ]] && log "versi berjalan: $PREVIOUS" || log "belum ada container berjalan"
 
-# ── 1. Migrasi dulu, sebelum menyentuh service yang jalan ────────────────
+# ── 1. Tarik image baru dulu (migrasi di bawah memakai image ini,
+#    bukan build lokal — bangun image di VPS 2-core lambat 15 menit). ─────
+log "menarik ${CRYPASTRA_IMAGE:-image dari compose}"
+$COMPOSE pull "$SERVICE"
+
+# ── 2. Migrasi dulu, sebelum menyentuh service yang jalan ────────────────
 log "menjalankan migrasi (image baru, container sekali-pakai)"
-if ! $COMPOSE run --rm --no-deps \
+if ! $COMPOSE run --rm --no-deps --no-build \
     -e CRYPASTRA_DB_PATH=/data/research.db \
     -e CRYPASTRA_MIGRATIONS_DIR=/app/apps/server/drizzle \
     "$SERVICE" bun run apps/server/src/db/migrate.ts; then
@@ -33,10 +48,6 @@ if ! $COMPOSE run --rm --no-deps \
     exit 1
 fi
 log "migrasi OK"
-
-# ── 2. Tarik + recreate ──────────────────────────────────────────────────
-log "menarik ${CRYPASTRA_IMAGE:-image dari compose}"
-$COMPOSE pull "$SERVICE"
 
 # Migrasi satu-kali dari era tarball-deploy: container lama bernama
 # `app-crypastra-recorder-1` (project compose lama `app`) TIDAK dikelola
@@ -55,10 +66,13 @@ $COMPOSE up -d --no-build "$SERVICE"
 container_id() { $COMPOSE ps -q "$SERVICE" 2>/dev/null; }
 
 log "smoke test: health + observasi bertambah (maks ${TIMEOUT}s)"
+# max(seq) global, bukan count(*): O(log n) lewat indeks, bukan full scan.
+# count(*) di DB jutaan baris butuh bermenit-menit di disk lambat dan
+# menyaingi recorder yang sedang menulis.
 count_obs() {
     docker run --rm -v "${VOLUME}:/data" --entrypoint bun \
         "${CRYPASTRA_IMAGE:-$($COMPOSE ps -q "$SERVICE" | head -1 | xargs -r docker inspect -f '{{.Config.Image}}')}" \
-        -e "import {Database} from 'bun:sqlite'; const db = new Database('/data/research.db', {readonly: true}); const r = db.query(\"SELECT count(*) AS n FROM market_observations\").get(); console.log(r.n);" \
+        -e "import {Database} from 'bun:sqlite'; const db = new Database('/data/research.db', {readonly: true}); const r = db.query(\"SELECT coalesce(max(seq),0) as n FROM market_observations\").get(); console.log(r.n);" \
         2>/dev/null || echo 0
 }
 
