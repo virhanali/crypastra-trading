@@ -38,8 +38,11 @@ log "menarik ${CRYPASTRA_IMAGE:-image dari compose}"
 $COMPOSE pull "$SERVICE"
 
 # ── 2. Migrasi dulu, sebelum menyentuh service yang jalan ────────────────
+# Catatan: `compose run` TIDAK punya flag --no-build dan tidak membangun
+# ulang bila image sudah ada lokal (sudah di-pull di langkah 1) — jangan
+# ditambahi flag itu (pernah membuat migrasi gagal instan).
 log "menjalankan migrasi (image baru, container sekali-pakai)"
-if ! $COMPOSE run --rm --no-deps --no-build \
+if ! $COMPOSE run --rm --no-deps \
     -e CRYPASTRA_DB_PATH=/data/research.db \
     -e CRYPASTRA_MIGRATIONS_DIR=/app/apps/server/drizzle \
     "$SERVICE" bun run apps/server/src/db/migrate.ts; then
